@@ -23,7 +23,7 @@ fetch_branch() {
         return
     fi
 
-    git fetch "$remote" "refs/heads/$branch:refs/heads/$branch"
+    git fetch "$remote" "refs/heads/$branch:refs/remotes/$remote/$branch"
 }
 
 cleanup() {
@@ -95,17 +95,22 @@ repo_root=$(git rev-parse --show-toplevel)
 fetch_branch "$source_branch"
 if [ -n "$remote" ]; then
     git fetch --tags "$remote"
-    git fetch "$remote" "refs/heads/$release_branch:refs/heads/$release_branch" >/dev/null 2>&1 || true
+    git fetch "$remote" "refs/heads/$release_branch:refs/remotes/$remote/$release_branch" >/dev/null 2>&1 || true
+    source_ref="refs/remotes/$remote/$source_branch"
+    release_ref="refs/remotes/$remote/$release_branch"
+else
+    source_ref="$source_branch"
+    release_ref="$release_branch"
 fi
 
-major=$(git show "$source_branch:$header" | sed -n 's/^#define PICOHTTPPARSER_VERSION_MAJOR \([0-9][0-9]*\)$/\1/p')
-version_string=$(git show "$source_branch:$header" | sed -n 's/^#define PICOHTTPPARSER_VERSION "\(.*\)"$/\1/p')
+major=$(git show "$source_ref:$header" | sed -n 's/^#define PICOHTTPPARSER_VERSION_MAJOR \([0-9][0-9]*\)$/\1/p')
+version_string=$(git show "$source_ref:$header" | sed -n 's/^#define PICOHTTPPARSER_VERSION "\(.*\)"$/\1/p')
 
-[ -n "$major" ] || die "could not parse PICOHTTPPARSER_VERSION_MAJOR from $header on $source_branch"
+[ -n "$major" ] || die "could not parse PICOHTTPPARSER_VERSION_MAJOR from $header on $source_ref"
 case "$version_string" in
     "$major".dev) ;;
     *)
-        die "expected $header on $source_branch to carry a $major.dev version string"
+        die "expected $header on $source_ref to carry a $major.dev version string"
         ;;
 esac
 
@@ -129,25 +134,25 @@ next_tag="${tag_prefix}${next_minor}"
 worktree_dir=$(mktemp -d "${TMPDIR:-/tmp}/picohttpparser-release.XXXXXX")
 trap cleanup EXIT INT TERM HUP
 
-git -C "$repo_root" worktree add --detach "$worktree_dir" "$source_branch" >/dev/null
+git -C "$repo_root" worktree add --detach "$worktree_dir" "$source_ref" >/dev/null
 
 cd "$worktree_dir"
 
 release_created=0
-if git rev-parse --verify "$release_branch^{commit}" >/dev/null 2>&1; then
-    git checkout "$release_branch" >/dev/null
+if git rev-parse --verify "$release_ref^{commit}" >/dev/null 2>&1; then
+    git checkout -B "$release_branch" "$release_ref" >/dev/null
 else
-    git checkout -b "$release_branch" "$source_branch" >/dev/null
+    git checkout -b "$release_branch" "$source_ref" >/dev/null
     release_created=1
 fi
 
-if [ "$release_created" -eq 0 ] && git merge-base --is-ancestor "$source_branch" HEAD; then
-    echo "release branch already contains $source_branch; nothing to do"
+if [ "$release_created" -eq 0 ] && git merge-base --is-ancestor "$source_ref" HEAD; then
+    echo "release branch already contains $source_ref; nothing to do"
     exit 0
 fi
 
 if [ "$release_created" -eq 0 ]; then
-    git merge --no-ff -X theirs --no-edit "$source_branch"
+    git merge --no-ff -X theirs --no-edit "$source_ref"
 fi
 
 tmp_header=$(mktemp "${TMPDIR:-/tmp}/picohttpparser-header.XXXXXX")
