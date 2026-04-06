@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    branches:
+    - master
+    - kazuho/reltest/master
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Source branch to release from
+        required: false
+        default: ""
+      release_branch:
+        description: Target release branch
+        required: false
+        default: ""
+      tag_prefix:
+        description: Release tag prefix
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Select release parameters
+      id: params
+      run: |
+        case "${GITHUB_EVENT_NAME}:${GITHUB_REF_NAME}" in
+          push:master)
+            echo "source_branch=master" >>"$GITHUB_OUTPUT"
+            echo "release_branch=release" >>"$GITHUB_OUTPUT"
+            echo "tag_prefix=v1." >>"$GITHUB_OUTPUT"
+            ;;
+          push:kazuho/reltest/master)
+            echo "source_branch=kazuho/reltest/master" >>"$GITHUB_OUTPUT"
+            echo "release_branch=kazuho/reltest/release" >>"$GITHUB_OUTPUT"
+            echo "tag_prefix=vtest1." >>"$GITHUB_OUTPUT"
+            ;;
+          workflow_dispatch:*)
+            [ -n "${{ inputs.source_branch }}" ] || { echo "workflow_dispatch requires source_branch" >&2; exit 1; }
+            [ -n "${{ inputs.release_branch }}" ] || { echo "workflow_dispatch requires release_branch" >&2; exit 1; }
+            [ -n "${{ inputs.tag_prefix }}" ] || { echo "workflow_dispatch requires tag_prefix" >&2; exit 1; }
+            echo "source_branch=${{ inputs.source_branch }}" >>"$GITHUB_OUTPUT"
+            echo "release_branch=${{ inputs.release_branch }}" >>"$GITHUB_OUTPUT"
+            echo "tag_prefix=${{ inputs.tag_prefix }}" >>"$GITHUB_OUTPUT"
+            ;;
+          *)
+            echo "unsupported trigger context: ${GITHUB_EVENT_NAME}:${GITHUB_REF_NAME}" >&2
+            exit 1
+            ;;
+        esac
+
+    - name: Run release automation
+      run: |
+        misc/release.sh \
+          --source-branch "${{ steps.params.outputs.source_branch }}" \
+          --release-branch "${{ steps.params.outputs.release_branch }}" \
+          --tag-prefix "${{ steps.params.outputs.tag_prefix }}" \
+          --remote origin \
+          --author-name "Kazuho Oku" \
+          --author-email "kazuhooku+github-actions@gmail.com" \
+          --push
